@@ -66,6 +66,7 @@ parser.set_defaults(visdom=False)
 
 best_acc = 0
 
+
 def main():
     global args, best_acc
     args = parser.parse_args()
@@ -74,9 +75,9 @@ def main():
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
     if args.visdom:
-        global plotter 
+        global plotter
         plotter = VisdomLinePlotter(env_name=args.name)
-    
+
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
@@ -84,50 +85,54 @@ def main():
     if args.conditions is not None:
         conditions = args.conditions
     else:
-        conditions = [0,1,2,3]
-    
+        conditions = [0, 1, 2, 3]
+
     kwargs = {'num_workers': 8, 'pin_memory': True} if args.cuda else {}
     print('Loading Train Dataset')
     train_loader = torch.utils.data.DataLoader(
-        TripletImageLoader('data', 'ut-zap50k-images', 'filenames.json', 
-            conditions, 'train', n_triplets=args.num_traintriplets,
-                        transform=transforms.Compose([
-                            transforms.Resize(112),
-                            transforms.CenterCrop(112),
-                            transforms.RandomHorizontalFlip(),
-                            transforms.ToTensor(),
-                            normalize,
-                    ])),
+        TripletImageLoader('data', 'ut-zap50k-images', 'filenames.json',
+                           conditions, 'train', n_triplets=args.num_traintriplets,
+                           transform=transforms.Compose([
+                               transforms.Resize(112),
+                               transforms.CenterCrop(112),
+                               transforms.RandomHorizontalFlip(),
+                               transforms.ToTensor(),
+                               normalize,
+                           ])),
         batch_size=args.batch_size, shuffle=True, **kwargs)
     print('Loading Test Dataset')
     test_loader = torch.utils.data.DataLoader(
-        TripletImageLoader('data', 'ut-zap50k-images', 'filenames.json', 
-            conditions, 'test', n_triplets=160000,
-                        transform=transforms.Compose([
-                            transforms.Resize(112),
-                            transforms.CenterCrop(112),
-                            transforms.ToTensor(),
-                            normalize,
-                    ])),
-        batch_size=64, shuffle=True, **kwargs)
+        TripletImageLoader('data', 'ut-zap50k-images', 'filenames.json',
+                           # conditions, 'test', n_triplets=16,
+                           conditions, 'test', n_triplets=160000,
+                           transform=transforms.Compose([
+                               transforms.Resize(112),
+                               transforms.CenterCrop(112),
+                               transforms.ToTensor(),
+                               normalize,
+                           ])),
+        batch_size=args.batch_size, shuffle=True, **kwargs)
     print('Loading Val Dataset')
     val_loader = torch.utils.data.DataLoader(
-        TripletImageLoader('data', 'ut-zap50k-images', 'filenames.json', 
-            conditions, 'val', n_triplets=80000,
-                        transform=transforms.Compose([
-                            transforms.Resize(112),
-                            transforms.CenterCrop(112),
-                            transforms.ToTensor(),
-                            normalize,
-                    ])),
-        batch_size=64, shuffle=True, **kwargs)
-    
+        TripletImageLoader('data', 'ut-zap50k-images', 'filenames.json',
+                           conditions, 'val', n_triplets=80000,
+                           # conditions, 'val', n_triplets=8,
+                           transform=transforms.Compose([
+                               transforms.Resize(112),
+                               transforms.CenterCrop(112),
+                               transforms.ToTensor(),
+                               normalize,
+                           ])),
+        batch_size=args.batch_size, shuffle=True, **kwargs)
     model = Resnet_18.resnet18(pretrained=True, embedding_size=args.dim_embed)
-    csn_model = ConditionalSimNet(model, n_conditions=args.num_concepts, 
-        embedding_size=args.dim_embed, learnedmask=args.learned, prein=args.prein)
+
+    csn_model = ConditionalSimNet(model, n_conditions=args.num_concepts,
+                                  embedding_size=args.dim_embed, learnedmask=args.learned, prein=args.prein)
     global mask_var
     mask_var = csn_model.masks.weight
+
     tnet = CS_Tripletnet(csn_model, args.num_concepts)
+
     if args.cuda:
         tnet.cuda()
 
@@ -140,13 +145,13 @@ def main():
             best_prec1 = checkpoint['best_prec1']
             tnet.load_state_dict(checkpoint['state_dict'])
             print("=> loaded checkpoint '{}' (epoch {})"
-                    .format(args.resume, checkpoint['epoch']))
+                  .format(args.resume, checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
     cudnn.benchmark = True
 
-    criterion = torch.nn.MarginRankingLoss(margin = args.margin)
+    criterion = torch.nn.MarginRankingLoss(margin=args.margin)
     parameters = filter(lambda p: p.requires_grad, tnet.parameters())
     optimizer = optim.Adam(parameters, lr=args.lr)
 
@@ -154,7 +159,7 @@ def main():
     print('  + Number of params: {}'.format(n_parameters))
 
     if args.test:
-        checkpoint = torch.load('runs/%s/'%('new_context_4/') + 'model_best.pth.tar')
+        checkpoint = torch.load('runs/%s/' % ('new_context_4/') + 'model_best.pth.tar')
         tnet.load_state_dict(checkpoint['state_dict'])
         test_acc = test(test_loader, tnet, criterion, 1)
         sys.exit()
@@ -176,9 +181,10 @@ def main():
             'best_prec1': best_acc,
         }, is_best)
 
-    checkpoint = torch.load('runs/%s/'%(args.name) + 'model_best.pth.tar')
+    checkpoint = torch.load('runs/%s/' % (args.name) + 'model_best.pth.tar')
     tnet.load_state_dict(checkpoint['state_dict'])
     test_acc = test(test_loader, tnet, criterion, 1)
+
 
 def train(train_loader, tnet, criterion, optimizer, epoch):
     losses = AverageMeter()
@@ -200,7 +206,7 @@ def train(train_loader, tnet, criterion, optimizer, epoch):
         if args.cuda:
             target = target.cuda()
         target = Variable(target)
-        
+
         loss_triplet = criterion(dista, distb, target)
         loss_embedd = embed_norm / np.sqrt(data1.size(0))
         loss_mask = mask_norm / data1.size(0)
@@ -208,10 +214,10 @@ def train(train_loader, tnet, criterion, optimizer, epoch):
 
         # measure accuracy and record loss
         acc = accuracy(dista, distb)
-        losses.update(loss_triplet.data[0], data1.size(0))
+        losses.update(loss_triplet.item(), data1.size(0))
         accs.update(acc, data1.size(0))
-        emb_norms.update(loss_embedd.data[0])
-        mask_norms.update(loss_mask.data[0])
+        emb_norms.update(loss_embedd.item())
+        mask_norms.update(loss_mask.item())
 
         # compute gradient and do optimizer step
         optimizer.zero_grad()
@@ -224,8 +230,8 @@ def train(train_loader, tnet, criterion, optimizer, epoch):
                   'Acc: {:.2f}% ({:.2f}%) \t'
                   'Emb_Norm: {:.2f} ({:.2f})'.format(
                 epoch, batch_idx * len(data1), len(train_loader.dataset),
-                losses.val, losses.avg, 
-                100. * accs.val, 100. * accs.avg, emb_norms.val, emb_norms.avg))
+                losses.val, losses.avg,
+                       100. * accs.val, 100. * accs.avg, emb_norms.val, emb_norms.avg))
 
     # log avg values to visdom
     if args.visdom:
@@ -235,6 +241,7 @@ def train(train_loader, tnet, criterion, optimizer, epoch):
         plotter.plot('mask_norms', 'train', epoch, mask_norms.avg)
         if epoch % 10 == 0:
             plotter.plot_mask(torch.nn.functional.relu(mask_var).data.cpu().numpy().T, epoch)
+
 
 def test(test_loader, tnet, criterion, epoch):
     losses = AverageMeter()
@@ -248,7 +255,7 @@ def test(test_loader, tnet, criterion, epoch):
     tnet.embeddingnet.eval()
     tnet.embeddingnet.embeddingnet.eval()
     for batch_idx, (data1, data2, data3, c) in enumerate(test_loader):
-        #print(batch_idx)
+        # print(batch_idx)
         if args.cuda:
             data1, data2, data3, c = data1.cuda(), data2.cuda(), data3.cuda(), c.cuda()
         data1, data2, data3, c = Variable(data1), Variable(data2), Variable(data3), Variable(c)
@@ -260,16 +267,16 @@ def test(test_loader, tnet, criterion, epoch):
         if args.cuda:
             target = target.cuda()
         target = Variable(target)
-        test_loss =  criterion(dista, distb, target).data[0]
+        test_loss = criterion(dista, distb, target).item()
 
         # measure accuracy and record loss
         acc = accuracy(dista, distb)
         accs.update(acc, data1.size(0))
         for condition in conditions:
             accs_cs[condition].update(accuracy_id(dista, distb, c_test, condition), data1.size(0))
-        losses.update(test_loss, data1.size(0))   
-   
-    #for condition in conditions:
+        losses.update(test_loss, data1.size(0))
+
+        # for condition in conditions:
     #    print('sim ' + str(condition) + ': ' + str(accs_cs[condition].avg))
 
     print('\nTest set: Average loss: {:.4f}, Accuracy: {:.2f}%\n'.format(
@@ -282,36 +289,42 @@ def test(test_loader, tnet, criterion, epoch):
         plotter.plot('loss', 'test', epoch, losses.avg)
     return accs.avg
 
+
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     """Saves checkpoint to disk"""
-    directory = "runs/%s/"%(args.name)
+    directory = "runs/%s/" % (args.name)
     if not os.path.exists(directory):
         os.makedirs(directory)
     filename = directory + filename
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'runs/%s/'%(args.name) + 'model_best.pth.tar')
+        shutil.copyfile(filename, 'runs/%s/' % (args.name) + 'model_best.pth.tar')
+
 
 class VisdomLinePlotter(object):
     """Plots to Visdom"""
+
     def __init__(self, env_name='main'):
         self.viz = Visdom()
         self.env = env_name
         self.plots = {}
+
     def plot(self, var_name, split_name, x, y, env=None):
         if env is not None:
             print_env = env
         else:
             print_env = self.env
         if var_name not in self.plots:
-            self.plots[var_name] = self.viz.line(X=np.array([x,x]), Y=np.array([y,y]), env=print_env, opts=dict(
+            self.plots[var_name] = self.viz.line(X=np.array([x, x]), Y=np.array([y, y]), env=print_env, opts=dict(
                 legend=[split_name],
                 title=var_name,
                 xlabel='Epochs',
                 ylabel=var_name
             ))
         else:
-            self.viz.updateTrace(X=np.array([x]), Y=np.array([y]), env=print_env, win=self.plots[var_name], name=split_name)
+            self.viz.line(X=np.array([x]), Y=np.array([y]), env=print_env, win=self.plots[var_name],
+                          name=split_name, update='append')
+
     def plot_mask(self, masks, epoch):
         self.viz.bar(
             X=masks,
@@ -322,8 +335,10 @@ class VisdomLinePlotter(object):
             )
         )
 
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
+
     def __init__(self):
         self.reset()
 
@@ -339,6 +354,7 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
+
 def adjust_learning_rate(optimizer, epoch):
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     lr = args.lr * ((1 - 0.015) ** epoch)
@@ -347,15 +363,18 @@ def adjust_learning_rate(optimizer, epoch):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
+
 def accuracy(dista, distb):
     margin = 0
     pred = (dista - distb - margin).cpu().data
-    return (pred > 0).sum()*1.0/dista.size()[0]
+    return (pred > 0).sum() * 1.0 / dista.size()[0]
+
 
 def accuracy_id(dista, distb, c, c_id):
     margin = 0
     pred = (dista - distb - margin).cpu().data
-    return ((pred > 0)*(c.cpu().data == c_id)).sum()*1.0/(c.cpu().data == c_id).sum()
+    return ((pred > 0) * (c.cpu().data == c_id)).sum() * 1.0 / (c.cpu().data == c_id).sum()
+
 
 if __name__ == '__main__':
-    main()    
+    main()
