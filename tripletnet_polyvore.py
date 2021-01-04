@@ -37,6 +37,14 @@ class CS_Tripletnet(nn.Module):
         general_x = self.embeddingnet.embeddingnet(x)
         general_y = self.embeddingnet.embeddingnet(y)
         general_z = self.embeddingnet.embeddingnet(z)
+
+        # calculate image similarity loss on the general embedding
+        # ref: https://github.com/mvasil/fashion-compatibility/blob/299b426e38b92b4441534e025bf84caa0ea3155b/tripletnet.py#L97
+        sim_i_disti_p = F.pairwise_distance(general_y, general_z, 2)
+        sim_i_disti_n1 = F.pairwise_distance(general_y, general_x, 2)
+        sim_i_disti_n2 = F.pairwise_distance(general_z, general_x, 2)
+
+
         # l2-normalize embeddings
         # norm = torch.norm(general_x, p=2, dim=1) + 1e-10
         # general_x = general_x / norm.expand_as(general_x)
@@ -95,4 +103,4 @@ class CS_Tripletnet(nn.Module):
         mask_embed_norm = (tot_embed_norm_x + tot_embed_norm_y + tot_embed_norm_z) / 3
         dist_a = F.pairwise_distance(embedded_x_far, embedded_y, 2)
         dist_b = F.pairwise_distance(embedded_x_close, embedded_z, 2)
-        return dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm
+        return dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm, sim_i_disti_p,sim_i_disti_n1,sim_i_disti_n2

@@ -213,7 +213,9 @@ def train(train_loader, tnet, criterion, optimizer, epoch):
         anchor, far, close, c = Variable(data1), Variable(data2), Variable(data3), Variable(c)
 
         # compute output
-        dista, distb, mask_norm, embed_norm, mask_embed_norm = tnet(anchor, far, close, c)
+        dista, distb, mask_norm, embed_norm, mask_embed_norm, sim_i_disti_p, sim_i_disti_n1, sim_i_disti_n2 = tnet(
+            anchor, far, close, c
+        )
 
         # 1 means, dista should be larger than distb
         target = torch.FloatTensor(dista.size()).fill_(1)
@@ -221,10 +223,18 @@ def train(train_loader, tnet, criterion, optimizer, epoch):
             target = target.cuda()
         target = Variable(target)
 
+        # calculate image similarity loss on the general embedding
+        # ref: https://github.com/mvasil/fashion-compatibility/blob/299b426e38b92b4441534e025bf84caa0ea3155b/tripletnet.py#L97
         loss_triplet = criterion(dista, distb, target)
+        loss_sim_i1 = criterion(sim_i_disti_p, sim_i_disti_n1, target)
+        loss_sim_i2 = criterion(sim_i_disti_p, sim_i_disti_n2, target)
+        loss_sim_i = (loss_sim_i1 + loss_sim_i2) / 2.
+        # ref: https://github.com/mvasil/fashion-compatibility/blob/299b426e38b92b4441534e025bf84caa0ea3155b/main.py#L76 (paper reported)
+        sim_i_coef = 5e-5
+
         loss_embedd = embed_norm / np.sqrt(data1.size(0))
         loss_mask = mask_norm / data1.size(0)
-        loss = loss_triplet + args.embed_loss * loss_embedd + args.mask_loss * loss_mask
+        loss = loss_triplet + args.embed_loss * loss_embedd + args.mask_loss * loss_mask + sim_i_coef * loss_sim_i
 
         # measure accuracy and record loss
         acc = accuracy(dista, distb)
