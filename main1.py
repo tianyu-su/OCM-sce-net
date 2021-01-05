@@ -26,8 +26,8 @@ from tripletnet_polyvore import CS_Tripletnet
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
 parser.add_argument('--batch-size', type=int, default=96, metavar='N',
                     help='input batch size for training (default: 64)')
-parser.add_argument('--num-workers', type=int, default=8)
-parser.add_argument('--epochs', type=int, default=15, metavar='N',
+parser.add_argument('--num-workers', type=int, default=6)
+parser.add_argument('--epochs', type=int, default=20, metavar='N',
                     help='number of epochs to train (default: 200)')
 parser.add_argument('--start_epoch', type=int, default=1, metavar='N',
                     help='number of start epoch (default: 1)')
@@ -43,9 +43,9 @@ parser.add_argument('--margin', type=float, default=0.2, metavar='M',
                     help='margin for triplet loss (default: 0.2)')
 parser.add_argument('--resume', default='', type=str,
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--name', default='test_20', type=str,
+parser.add_argument('--name', default='novse_nondisjoint', type=str,
                     help='name of experiment')
-parser.add_argument('--embed_loss', type=float, default=5e-3, metavar='M',
+parser.add_argument('--embed_loss', type=float, default=5e-4, metavar='M',
                     help='parameter for loss for embedding norm')
 parser.add_argument('--mask_loss', type=float, default=5e-4, metavar='M',
                     help='parameter for loss for mask norm')
@@ -63,18 +63,18 @@ parser.add_argument('--visdom', dest='visdom', action='store_true',
                     help='Use visdom to track and plot')
 parser.add_argument('--conditions', nargs='*', type=int,
                     help='Set of similarity notions')
-parser.add_argument('--num_concepts', type=int, default=4, metavar='N',
+parser.add_argument('--num_concepts', type=int, default=5, metavar='N',
                     help='number of random embeddings when rand_typespaces=True')
 parser.add_argument('--polyvore_split', default='nondisjoint', type=str,
                     help='specifies the split of the polyvore data (either disjoint or nondisjoint)')
-parser.add_argument('--datadir', default='data', type=str,
+parser.add_argument('--datadir', default='.', type=str,
                     help='directory of the polyvore outfits dataset (default: data)')
 parser.add_argument('--rand_typespaces', action='store_true', default=False,
                     help='randomly assigns comparisons to type-specific embeddings where #comparisons < #embeddings')
 parser.add_argument('--num_rand_embed', type=int, default=4, metavar='N',
                     help='number of random embeddings when rand_typespaces=True')
 parser.set_defaults(test=False)
-parser.set_defaults(learned=False)
+parser.set_defaults(learned=True)
 parser.set_defaults(prein=False)
 parser.set_defaults(visdom=False)
 
@@ -84,6 +84,7 @@ best_acc = 0
 def main():
     global args, best_acc
     args = parser.parse_args()
+    print(args)
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     torch.manual_seed(args.seed)
     if args.cuda:
