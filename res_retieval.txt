@@ -1,0 +1,16 @@
+s9: /home/sutianyu/DataDisk/baselines/sce-net
+
+
+same_type_back_rand1
+nondisjoint:
+MRR:0.004  HR@1:0.000  HR@10:0.002  HR@100:0.043  HR@200:0.101
+
+disjoint:
+MRR:0.005  HR@1:0.000  HR@10:0.003  HR@100:0.043  HR@200:0.123
+
+
+new test set
+nondisjoint:
+MRR:0.061  HR@1:0.022  HR@10:0.129  HR@100:0.546  HR@200:0.768
+disjoint:
+MRR:0.059  HR@1:0.020  HR@10:0.121  HR@100:0.541  HR@200:0.773

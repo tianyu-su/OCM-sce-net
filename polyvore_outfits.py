@@ -18,6 +18,9 @@ import torch
 import torch.utils.data
 from PIL import Image
 from sklearn.metrics import roc_auc_score
+from tqdm import tqdm
+
+from metrics import MRR_HR
 
 
 def default_image_loader(path):
@@ -115,8 +118,29 @@ def load_fitb_questions(fn, im2index, id2im):
     return questions
 
 
+def load_retrieval_questions(fn, im2index, id2im):
+    """ Returns the list of fill in the blank questions for the split
+         [[P,N,N,N], [P,N,N,N] ]
+         P:(items,label)
+         N:(items,label)
+         """
+    with open(fn, 'r') as f:
+        data = json.load(f)
+    questions = []
+    print('extract from disk ...')
+    for item in tqdm(data):
+        question = item['question']
+        q_index, _, gt = parse_iminfo(question, im2index, id2im)
+        answer = [item["right"]] + item['candidate']
+        a_index, is_correct, _ = parse_iminfo(answer, im2index, id2im, gt)
+        questions.append((q_index, a_index, is_correct))
+
+    return questions
+
+
 class TripletImageLoader(torch.utils.data.Dataset):
-    def __init__(self, args, split, meta_data, text_dim=None, transform=None, loader=default_image_loader):
+    def __init__(self, args, split, meta_data, text_dim=None, transform=None, loader=default_image_loader,
+                 random_type="same_type"):
         rootdir = os.path.join(args.datadir, 'polyvore_outfits', args.polyvore_split)
         self.impath = os.path.join(args.datadir, 'polyvore_outfits', 'images')
         self.is_train = split == 'train'
@@ -183,6 +207,10 @@ class TripletImageLoader(torch.utils.data.Dataset):
             self.fitb_questions = load_fitb_questions(fn, im2index, id2im)
             fn = os.path.join(rootdir, 'compatibility_%s.txt' % split)
             self.compatibility_questions = load_compatibility_questions(fn, im2index, id2im)
+            fn = os.path.join(args.datadir, 'polyvore_outfits', 'retrival_data', random_type,
+                              "{}.json".format(args.polyvore_split))
+
+            self.retrieval_questions = load_retrieval_questions(fn, im2index, id2im)
 
     def load_train_item(self, image_id):
         """ Returns a single item in the triplet and its data
@@ -302,6 +330,44 @@ class TripletImageLoader(torch.utils.data.Dataset):
         # scores are based on distances so need to convert them so higher is better
         acc = correct / n_questions
         return acc
+
+    def test_retrieval(self, tnet, embeds, img_norm_embeds):
+        """ Returns the accuracy of the fill in the blank task
+
+            embeds: precomputed embedding features used to score
+                    each compatibility question
+            metric: a function used to score the elementwise product
+                    of a pair of embeddings, if None euclidean
+                    distance is used
+        """
+        print("inference....")
+        HR_ks = (1, 10, 100, 200)
+        total_score = []
+        for (questions, answers, is_correct) in tqdm(self.retrieval_questions):
+            answer_score = np.zeros(len(answers), dtype=np.float32)
+            for index, (answer, img1) in enumerate(answers):
+                score = 0.0
+                for question, img2 in questions:
+                    feat = torch.cat([img_norm_embeds[question], img_norm_embeds[answer]])
+                    weights = tnet.concept_branch(feat.unsqueeze(0))  # (1,num_condition)
+
+                    embed1 = torch.matmul(weights, embeds[question])  # (1,num_condition) * (num_condition,dim)
+                    embed2 = torch.matmul(weights, embeds[answer])
+
+                    score += torch.nn.functional.pairwise_distance(embed1, embed2, 2)
+
+                answer_score[index] = score.squeeze().cpu().numpy()
+
+            assert is_correct[0] == True, "dont't metric"
+            total_score.append(np.expand_dims(answer_score, axis=0))
+
+        # scores are based on distances so need to convert them so higher is better
+        total_score = np.concatenate(total_score, axis=0)
+        res_metrics = MRR_HR(-total_score, HR_ks=HR_ks)
+
+        print("MRR:{:.3F} ".format(res_metrics[0]), end=' ')
+        for idx, kk in enumerate(HR_ks):
+            print("HR@{}:{:.3f} ".format(kk, res_metrics[1][idx]), end=' ')
 
     def __getitem__(self, index):
         # anchor, far, close
