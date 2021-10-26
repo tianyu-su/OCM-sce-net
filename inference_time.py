@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import sys
+import time
 
 import numpy as np
 import torch
@@ -15,14 +16,20 @@ import torch.backends.cudnn as cudnn
 import torch.optim as optim
 from torch.autograd import Variable
 from torchvision import transforms
-from tqdm import tqdm
 from visdom import Visdom
 
 import Resnet_18
 from csn_polyvore import ConditionalSimNet
-from polyvore_outfits_retrieval import TripletImageLoader
+from polyvore_outfits import TripletImageLoader
 from tripletnet_polyvore import CS_Tripletnet
-
+"""
+--datadir ./data \
+ --polyvore_split nondisjoint --name novse_nondisjoint \
+ --learned --epochs 15 --num_concepts 5  --embed_loss 5e-4  --mask_loss 5e-4 \
+ --batch-size 96 --num-workers 8 \
+ --test --resume runs/best/novse_nondisjoint/model_best.pth.tar
+ 
+"""
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
 parser.add_argument('--batch-size', type=int, default=96, metavar='N',
@@ -106,10 +113,30 @@ def main():
     meta_data = json.load(open(fn, 'r'))
 
     kwargs = {'num_workers': args.num_workers, 'pin_memory': True} if args.cuda else {}
-
+    print('Loading Train Dataset')
+    train_loader = torch.utils.data.DataLoader(
+        TripletImageLoader(args, 'train', meta_data,
+                           transform=transforms.Compose([
+                               transforms.Resize(112),
+                               transforms.CenterCrop(112),
+                               transforms.RandomHorizontalFlip(),
+                               transforms.ToTensor(),
+                               normalize,
+                           ])),
+        batch_size=args.batch_size, shuffle=True, **kwargs)
     print('Loading Test Dataset')
     test_loader = torch.utils.data.DataLoader(
         TripletImageLoader(args, 'test', meta_data,
+                           transform=transforms.Compose([
+                               transforms.Resize(112),
+                               transforms.CenterCrop(112),
+                               transforms.ToTensor(),
+                               normalize,
+                           ])),
+        batch_size=args.batch_size, shuffle=False, **kwargs)
+    print('Loading Val Dataset')
+    val_loader = torch.utils.data.DataLoader(
+        TripletImageLoader(args, 'valid', meta_data,
                            transform=transforms.Compose([
                                transforms.Resize(112),
                                transforms.CenterCrop(112),
@@ -156,6 +183,27 @@ def main():
         # tnet.load_state_dict(checkpoint['state_dict'])
         test_acc = test(test_loader, tnet)
         sys.exit()
+
+    for epoch in range(args.start_epoch, args.epochs + 1):
+        # update learning rate
+        adjust_learning_rate(optimizer, epoch)
+        # train for one epoch
+        train(train_loader, tnet, criterion, optimizer, epoch)
+        # evaluate on validation set
+        acc = test(val_loader, tnet)
+
+        # remember best acc and save checkpoint
+        is_best = acc > best_acc
+        best_acc = max(acc, best_acc)
+        save_checkpoint({
+            'epoch': epoch + 1,
+            'state_dict': tnet.state_dict(),
+            'best_prec1': best_acc,
+        }, is_best)
+
+    checkpoint = torch.load('runs/%s/' % (args.name) + 'model_best.pth.tar')
+    tnet.load_state_dict(checkpoint['state_dict'])
+    test_acc = test(test_loader, tnet)
 
 
 def train(train_loader, tnet, criterion, optimizer, epoch):
@@ -234,10 +282,11 @@ def test(test_loader, tnet):
 
     masked_embeddings = []
     img_norm_embeddings = []
-    print('forward image feature .. ')
+
 
     # for test/val data we get images only from the data loader
-    for images in tqdm(test_loader):
+    start_time = time.time()
+    for batch_idx, images in enumerate(test_loader):
         if args.cuda:
             images = images.cuda()
         images = Variable(images)
@@ -248,9 +297,21 @@ def test(test_loader, tnet):
     masked_embeddings = torch.cat(masked_embeddings)
     img_norm_embeddings = torch.cat(img_norm_embeddings)
 
-    # auc = test_loader.dataset.test_compatibility(tnet, masked_embeddings, img_norm_embeddings)
-    # acc = test_loader.dataset.test_fitb(tnet, masked_embeddings, img_norm_embeddings)
-    test_loader.dataset.test_retrieval(tnet, masked_embeddings, img_norm_embeddings)
+    auc = test_loader.dataset.test_compatibility(tnet, masked_embeddings, img_norm_embeddings)
+
+    elapse = time.time() - start_time
+    with open("test_auc_time.txt", 'w') as fp:
+        fp.write("total: {} \n".format(elapse))
+        fp.write("data size: {} \n".format(len(test_loader.dataset)))
+        fp.write("avg: {} \n".format(elapse/len(test_loader.dataset)))
+
+    acc = test_loader.dataset.test_fitb(tnet, masked_embeddings, img_norm_embeddings)
+    total = auc + acc
+    print('\n{} set: Compat AUC: {:.2f} FITB: {:.1f}\n'.format(
+        test_loader.dataset.split,
+        round(auc, 2), round(acc * 100, 1)))
+
+    return total
 
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):

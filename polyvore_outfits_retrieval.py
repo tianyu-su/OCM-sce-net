@@ -207,10 +207,10 @@ class TripletImageLoader(torch.utils.data.Dataset):
             self.fitb_questions = load_fitb_questions(fn, im2index, id2im)
             fn = os.path.join(rootdir, 'compatibility_%s.txt' % split)
             self.compatibility_questions = load_compatibility_questions(fn, im2index, id2im)
-            # fn = os.path.join(args.datadir, 'polyvore_outfits', 'retrival_data', random_type,
-            #                   "{}.json".format(args.polyvore_split))
-            #
-            # self.retrieval_questions = load_retrieval_questions(fn, im2index, id2im)
+            fn = os.path.join(args.datadir, 'polyvore_outfits', 'retrival_data', random_type,
+                              "{}.json".format(args.polyvore_split))
+
+            self.retrieval_questions = load_retrieval_questions(fn, im2index, id2im)
 
     def load_train_item(self, image_id):
         """ Returns a single item in the triplet and its data
